@@ -13,6 +13,7 @@ import { loadOverrideFromStorage, loadRuntimeConfig } from "@/lib/config";
 
 const Login = lazy(() => import("./pages/Login"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
+const AdminUsers = lazy(() => import("./pages/AdminUsers"));
 const Alerts = lazy(() => import("./pages/Alerts"));
 const Logs = lazy(() => import("./pages/Logs"));
 const ReplayDetection = lazy(() => import("./pages/ReplayDetection"));
@@ -68,10 +69,13 @@ const App = () => {
                 <Route path="/" element={<RootRedirect />} />
 
                 <Route path="/dashboard" element={<ProtectedRoute><ShellRoute><Dashboard /></ShellRoute></ProtectedRoute>} />
+                <Route path="/users" element={<ProtectedRoute roles={["admin"]}><ShellRoute><AdminUsers /></ShellRoute></ProtectedRoute>} />
                 <Route path="/alerts" element={<ProtectedRoute><ShellRoute><Alerts /></ShellRoute></ProtectedRoute>} />
                 <Route path="/logs" element={<ProtectedRoute><ShellRoute><Logs /></ShellRoute></ProtectedRoute>} />
                 <Route path="/kibana" element={<ProtectedRoute><ShellRoute><Kibana /></ShellRoute></ProtectedRoute>} />
-                <Route path="/settings" element={<ProtectedRoute><ShellRoute><SettingsPage /></ShellRoute></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute roles={["admin"]}><ShellRoute><SettingsPage /></ShellRoute></ProtectedRoute>} />
+
+              
 
                 <Route path="/monitoring" element={<Navigate to="/detection" replace />} />
                 <Route path="/detection" element={<ProtectedRoute roles={["admin"]}><ShellRoute><ReplayDetection /></ShellRoute></ProtectedRoute>} />

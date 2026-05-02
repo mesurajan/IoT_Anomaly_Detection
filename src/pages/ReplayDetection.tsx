@@ -21,7 +21,16 @@ const REPLAY_JOB_KEY = "sentinel.activeReplayJobId";
 const FINISHED_STATUSES = ["completed", "failed", "stopped"];
 
 export default function ReplayDetection() {
-  const [rangeMinutes, setRangeMinutes] = useState(15);
+  const [rangeMinutes, setRangeMinutes] = useState(() => {
+  const saved = localStorage.getItem("alerts.rangeMinutes");
+  return saved ? Number(saved) : 15;
+});
+
+
+useEffect(() => {
+  localStorage.setItem("alerts.rangeMinutes", String(rangeMinutes));
+}, [rangeMinutes]);
+
   const stats = usePolling(() => sentinel.stats(rangeMinutes, "dataset_replay"), 5000, [rangeMinutes]);
   const logs = usePolling(() => sentinel.logs(8, rangeMinutes, "dataset_replay"), 8000, [rangeMinutes]);
   const datasets = usePolling(() => sentinel.datasets(), 0);

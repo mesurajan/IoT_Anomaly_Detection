@@ -10,7 +10,7 @@ import {
   setMockMonitoring,
 } from "./mock";
 import type {
-  AlertItem, AuditEntry, DatasetInfo, DetectionJob, LogItem, ModelAlgorithm, ModelInfo,
+  AdminUser, AlertItem, AuditEntry, DatasetInfo, DetectionJob, LogItem, ModelAlgorithm, ModelInfo,
   ProtocolDistributionItem, Stats, SystemHealth, TrendPoint,
   TrainingJob, WiresharkInterfaceResponse,
 } from "./types";
@@ -124,6 +124,15 @@ export const sentinel = {
   }, () => mockLogs(limit), "logs"),
   protocolDistribution: (limit: number, rangeMinutes?: number, eventSource?: string) =>
     withFallback(async () => normalizeProtocol(await api.get<any>("/api/protocol-distribution", { limit, rangeMinutes, eventSource })), mockProtocolDistribution, "protocols"),
+  users: () => withFallback(async () => {
+    const raw = await api.get<any>("/api/users");
+    return Array.isArray(raw) ? raw : raw.users ?? [];
+  }, () => [], "users"),
+  createUser: (payload: { username: string; password: string; role: "admin" | "analyst" }) =>
+    api.post<{ user: AdminUser }>("/api/users", payload),
+  updateUser: (userId: string, payload: { username: string; role: "admin" | "analyst"; password?: string }) =>
+    api.put<{ user: AdminUser }>(`/api/users/${encodeURIComponent(userId)}`, payload),
+  deleteUser: (userId: string) => api.del(`/api/users/${encodeURIComponent(userId)}`),
   trend: (rangeMinutes?: number, eventSource?: string) => withFallback(async () => {
     const raw = await api.get<any>("/api/trend", { rangeMinutes, eventSource, limit: 30 });
     return Array.isArray(raw) ? raw : raw.points ?? [];

@@ -113,6 +113,35 @@
     background: currentColor;
     opacity: 0.6;
   }
+
+  .kbn-panel {
+    @apply rounded-md border border-border bg-card/80 p-4;
+    box-shadow: var(--shadow-card);
+  }
+  .kbn-panel-title {
+    @apply text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground;
+  }
+  .kbn-panel-subtitle {
+    @apply text-xs text-muted-foreground;
+  }
+  .kbn-stat {
+    @apply space-y-2;
+  }
+  .kbn-stat-label {
+    @apply text-[0.65rem] uppercase tracking-[0.22em] text-muted-foreground;
+  }
+  .kbn-stat-value {
+    @apply text-2xl font-semibold tabular-nums;
+  }
+  .kbn-stat-hint {
+    @apply text-xs text-muted-foreground;
+  }
+  .kbn-stat-delta {
+    @apply mt-2 text-[0.7rem] font-medium uppercase tracking-[0.2em];
+  }
+  .kbn-stat-icon {
+    @apply rounded-md bg-secondary/60 p-2 ring-1 ring-border;
+  }
 }
 
 @layer utilities {

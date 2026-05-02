@@ -61,6 +61,13 @@ const UNIT_TO_MINUTES = {
 } as const;
 
 type TimeUnit = keyof typeof UNIT_TO_MINUTES;
+const RANGE_STORAGE_KEY = "sentinel.dashboard.rangeMinutes";
+
+function loadStoredRangeMinutes() {
+  if (typeof window === "undefined") return 15;
+  const raw = Number(window.localStorage.getItem(RANGE_STORAGE_KEY) || 15);
+  return Number.isFinite(raw) && raw >= 1 ? raw : 15;
+}
 
 function rangeLabel(minutes: number) {
   const common = COMMON_RANGES.find(item => item.minutes === minutes);
@@ -73,9 +80,19 @@ function rangeLabel(minutes: number) {
 export default function Dashboard() {
   const { user } = useAuth();
   const cfg = getConfig();
-  const [rangeMinutes, setRangeMinutes] = useState(15);
-  const [draftAmount, setDraftAmount] = useState(15);
-  const [draftUnit, setDraftUnit] = useState<TimeUnit>("Minutes");
+  const [rangeMinutes, setRangeMinutes] = useState(loadStoredRangeMinutes);
+  const [draftAmount, setDraftAmount] = useState(() => {
+    const initial = loadStoredRangeMinutes();
+    if (Number.isInteger(initial / UNIT_TO_MINUTES.Days) && initial >= UNIT_TO_MINUTES.Days) return initial / UNIT_TO_MINUTES.Days;
+    if (Number.isInteger(initial / UNIT_TO_MINUTES.Hours) && initial >= UNIT_TO_MINUTES.Hours) return initial / UNIT_TO_MINUTES.Hours;
+    return initial;
+  });
+  const [draftUnit, setDraftUnit] = useState<TimeUnit>(() => {
+    const initial = loadStoredRangeMinutes();
+    if (Number.isInteger(initial / UNIT_TO_MINUTES.Days) && initial >= UNIT_TO_MINUTES.Days) return "Days";
+    if (Number.isInteger(initial / UNIT_TO_MINUTES.Hours) && initial >= UNIT_TO_MINUTES.Hours) return "Hours";
+    return "Minutes";
+  });
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshSeconds, setRefreshSeconds] = useState(60);
   const [timeOpen, setTimeOpen] = useState(false);
@@ -85,6 +102,7 @@ export default function Dashboard() {
   const protos = usePolling(() => sentinel.protocolDistribution(cfg.defaultLimit, rangeMinutes), 15000, [rangeMinutes, cfg.defaultLimit]);
   const alerts = usePolling(() => sentinel.alerts(8, rangeMinutes), 10000, [rangeMinutes]);
   const logs = usePolling(() => sentinel.logs(8, rangeMinutes), 10000, [rangeMinutes]);
+  const isAdmin = user?.role === "admin";
 
   const refreshDashboard = () => {
     stats.refresh();
@@ -99,6 +117,10 @@ export default function Dashboard() {
     const id = setInterval(refreshDashboard, Math.max(5, refreshSeconds) * 1000);
     return () => clearInterval(id);
   }, [autoRefresh, refreshSeconds]);
+
+  useEffect(() => {
+    window.localStorage.setItem(RANGE_STORAGE_KEY, String(rangeMinutes));
+  }, [rangeMinutes]);
 
   const applyDraftRange = () => {
     const minutes = Math.max(1, Math.floor(draftAmount || 1)) * UNIT_TO_MINUTES[draftUnit];
@@ -135,8 +157,10 @@ export default function Dashboard() {
     }));
   }, [trend.data, rangeMinutes]);
 
-  const isAdmin = user?.role === "admin";
   const s = stats.data;
+  const totalTraffic = s?.totalTraffic ?? 0;
+  const normalPct = totalTraffic ? (s?.normalTraffic ?? 0) / totalTraffic * 100 : 0;
+  const anomalyPct = totalTraffic ? (s?.anomalies ?? 0) / totalTraffic * 100 : 0;
   const selectedRangeLabel = rangeLabel(rangeMinutes);
 
   return (
@@ -248,21 +272,60 @@ export default function Dashboard() {
 
       {/* Stat cards */}
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
-        <StatCard label="Total Traffic" value={s ? s.totalTraffic.toLocaleString() : "-"} icon={<Activity className="h-4 w-4" />} hint={selectedRangeLabel.toLowerCase()} />
-        <StatCard label="Normal" value={s ? s.normalTraffic.toLocaleString() : "-"} tone="success" icon={<ShieldCheck className="h-4 w-4" />} />
-        <StatCard label="Anomalies" value={s ? s.anomalies.toLocaleString() : "-"} tone="danger" icon={<AlertTriangle className="h-4 w-4" />} />
-        <StatCard label="Active Alerts" value={s ? s.activeAlerts : "-"} tone="warning" icon={<Zap className="h-4 w-4" />} />
-        <StatCard label="Model Accuracy" value={s ? `${(s.modelAccuracy * 100).toFixed(1)}%` : "-"} tone="info" icon={<Gauge className="h-4 w-4" />} />
-        <StatCard label="Latency" value={s ? `${s.latencyMs} ms` : "-"} tone="default" icon={<Server className="h-4 w-4" />} hint={s?.monitoring ? "Monitoring active" : "Monitoring paused"} />
+        <StatCard
+          label="Total Traffic"
+          value={s ? s.totalTraffic.toLocaleString() : "-"}
+          icon={<Activity className="h-4 w-4" />}
+          hint={selectedRangeLabel.toLowerCase()}
+          variant="kibana"
+        />
+        <StatCard
+          label="Normal"
+          value={s ? s.normalTraffic.toLocaleString() : "-"}
+          tone="success"
+          icon={<ShieldCheck className="h-4 w-4" />}
+          delta={totalTraffic ? `${normalPct.toFixed(1)}% of traffic` : undefined}
+          variant="kibana"
+        />
+        <StatCard
+          label="Anomalies"
+          value={s ? s.anomalies.toLocaleString() : "-"}
+          tone="danger"
+          icon={<AlertTriangle className="h-4 w-4" />}
+          delta={totalTraffic ? `${anomalyPct.toFixed(1)}% of traffic` : undefined}
+          variant="kibana"
+        />
+        <StatCard
+          label="Active Alerts"
+          value={s ? s.activeAlerts : "-"}
+          tone="warning"
+          icon={<Zap className="h-4 w-4" />}
+          variant="kibana"
+        />
+        <StatCard
+          label="Model Accuracy"
+          value={s ? `${(s.modelAccuracy * 100).toFixed(1)}%` : "-"}
+          tone="info"
+          icon={<Gauge className="h-4 w-4" />}
+          variant="kibana"
+        />
+        <StatCard
+          label="Latency"
+          value={s ? `${s.latencyMs} ms` : "-"}
+          tone="default"
+          icon={<Server className="h-4 w-4" />}
+          hint={s?.monitoring ? "Monitoring active" : "Monitoring paused"}
+          variant="kibana"
+        />
       </section>
 
       {/* Charts */}
       <section className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-lg border border-border bg-card p-5 lg:col-span-2">
+        <div className="kbn-panel lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold">Anomaly Trend</h2>
-              <p className="text-xs text-muted-foreground">Normal vs anomalous traffic over time</p>
+              <h2 className="kbn-panel-title">Anomaly Trend</h2>
+              <p className="kbn-panel-subtitle">Normal vs anomalous traffic over time</p>
             </div>
           </div>
           {trend.loading ? <LoadingBlock /> : (
@@ -292,9 +355,9 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="rounded-lg border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold">Protocol Distribution</h2>
-          <p className="text-xs text-muted-foreground">Share of traffic by protocol</p>
+        <div className="kbn-panel">
+          <h2 className="kbn-panel-title">Protocol Distribution</h2>
+          <p className="kbn-panel-subtitle">Share of traffic by protocol</p>
           {protos.loading ? <LoadingBlock /> : (
             <div className="h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -311,11 +374,11 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-border bg-card p-5">
+      <section className="kbn-panel">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold">Recent Traffic Activity</h2>
-            <p className="text-xs text-muted-foreground">Bytes per protocol observed in latest window</p>
+            <h2 className="kbn-panel-title">Recent Traffic Activity</h2>
+            <p className="kbn-panel-subtitle">Bytes per protocol observed in latest window</p>
           </div>
         </div>
         {protos.loading ? <LoadingBlock /> : (
@@ -335,11 +398,11 @@ export default function Dashboard() {
 
       {/* Tables */}
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border border-border bg-card">
+        <div className="kbn-panel p-0">
           <div className="flex items-center justify-between border-b border-border p-4">
             <div>
-              <h2 className="text-sm font-semibold">Recent Alerts</h2>
-              <p className="text-xs text-muted-foreground">Latest detection events</p>
+              <h2 className="kbn-panel-title">Recent Alerts</h2>
+              <p className="kbn-panel-subtitle">Latest detection events</p>
             </div>
             <Button asChild variant="ghost" size="sm"><Link to="/alerts">View all <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link></Button>
           </div>
@@ -369,11 +432,11 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="rounded-lg border border-border bg-card">
+        <div className="kbn-panel p-0">
           <div className="flex items-center justify-between border-b border-border p-4">
             <div>
-              <h2 className="text-sm font-semibold">Recent Logs</h2>
-              <p className="text-xs text-muted-foreground">Latest classified flows</p>
+              <h2 className="kbn-panel-title">Recent Logs</h2>
+              <p className="kbn-panel-subtitle">Latest classified flows</p>
             </div>
             <Button asChild variant="ghost" size="sm"><Link to="/logs">View all <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link></Button>
           </div>
@@ -407,6 +470,7 @@ export default function Dashboard() {
           )}
         </div>
       </section>
+
     </div>
   );
 }

@@ -3,6 +3,16 @@
  */
 export type Role = "admin" | "analyst";
 
+export interface AdminUser {
+  id: string;
+  username: string;
+  role: Role;
+  createdAt?: string;
+  updatedAt?: string;
+  failedAttempts?: number;
+  lockUntil?: number | null;
+}
+
 export interface User {
   id: string;
   username: string;

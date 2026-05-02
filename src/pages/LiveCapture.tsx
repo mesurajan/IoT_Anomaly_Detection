@@ -22,7 +22,15 @@ const LIVE_JOB_KEY = "sentinel.activeLiveCaptureJobId";
 const FINISHED_STATUSES = ["completed", "failed", "stopped"];
 
 export default function LiveCapture() {
-  const [rangeMinutes, setRangeMinutes] = useState(15);
+  const [rangeMinutes, setRangeMinutes] = useState(() => {
+  const saved = localStorage.getItem("alerts.rangeMinutes");
+  return saved ? Number(saved) : 15;
+});
+
+useEffect(() => {
+  localStorage.setItem("alerts.rangeMinutes", String(rangeMinutes));
+}, [rangeMinutes]);
+
   const wireshark = usePolling(() => sentinel.wiresharkInterfaces(), 0);
   const stats = usePolling(() => sentinel.stats(rangeMinutes, "live_capture"), 5000, [rangeMinutes]);
   const logs = usePolling(() => sentinel.logs(8, rangeMinutes, "live_capture"), 8000, [rangeMinutes]);

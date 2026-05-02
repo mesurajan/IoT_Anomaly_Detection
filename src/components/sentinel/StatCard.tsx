@@ -8,6 +8,7 @@ interface StatCardProps {
   icon?: ReactNode;
   tone?: "default" | "success" | "warning" | "danger" | "info";
   hint?: string;
+  variant?: "default" | "kibana";
 }
 
 const toneClass: Record<NonNullable<StatCardProps["tone"]>, string> = {
@@ -18,7 +19,35 @@ const toneClass: Record<NonNullable<StatCardProps["tone"]>, string> = {
   info: "text-info",
 };
 
-export function StatCard({ label, value, delta, icon, tone = "default", hint }: StatCardProps) {
+export function StatCard({
+  label,
+  value,
+  delta,
+  icon,
+  tone = "default",
+  hint,
+  variant = "default",
+}: StatCardProps) {
+  if (variant === "kibana") {
+    return (
+      <div className="kbn-panel kbn-stat">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="kbn-stat-label">{label}</p>
+            <p className="kbn-stat-value">{value}</p>
+            {hint && <p className="kbn-stat-hint">{hint}</p>}
+          </div>
+          {icon && (
+            <div className={cn("kbn-stat-icon", toneClass[tone])}>
+              {icon}
+            </div>
+          )}
+        </div>
+        {delta && <p className={cn("kbn-stat-delta", toneClass[tone])}>{delta}</p>}
+      </div>
+    );
+  }
+
   return (
     <div className="stat-card animate-fade-in">
       <div className="flex items-start justify-between gap-3">

@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+﻿import {  useEffect,useMemo, useState } from "react";
 import { format } from "date-fns";
 import { Check, RefreshCw, ShieldAlert, ShieldX, Download } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +22,14 @@ import type { AlertItem, AlertSeverity } from "@/lib/types";
 export default function Alerts() {
   const cfg = getConfig();
   const { user } = useAuth();
-  const [rangeMinutes, setRangeMinutes] = useState(15);
+  const [rangeMinutes, setRangeMinutes] = useState(() => {
+  const saved = localStorage.getItem("alerts.rangeMinutes");
+  return saved ? Number(saved) : 15;
+});
+
+useEffect(() => {
+  localStorage.setItem("alerts.rangeMinutes", String(rangeMinutes));
+}, [rangeMinutes]);
   const { data, loading, degraded, refresh } = usePolling(() => sentinel.alerts(cfg.defaultLimit, rangeMinutes), 12000, [cfg.defaultLimit, rangeMinutes]);
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState<AlertSeverity | "all">("all");

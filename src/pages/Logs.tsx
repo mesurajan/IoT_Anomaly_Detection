@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+﻿import {  useEffect,useMemo, useState } from "react";
 import { format } from "date-fns";
 import { Download, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -19,7 +19,15 @@ import {
 export default function Logs() {
   const cfg = getConfig();
   const [limit, setLimit] = useState<number>(cfg.defaultLimit);
-  const [rangeMinutes, setRangeMinutes] = useState(15);
+  const [rangeMinutes, setRangeMinutes] = useState(() => {
+  const saved = localStorage.getItem("alerts.rangeMinutes");
+  return saved ? Number(saved) : 15;
+});
+
+useEffect(() => {
+  localStorage.setItem("alerts.rangeMinutes", String(rangeMinutes));
+}, [rangeMinutes]);
+
   const { data, loading, degraded, refresh } = usePolling(() => sentinel.logs(limit, rangeMinutes), 15000, [limit, rangeMinutes]);
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState<"all" | "normal" | "anomaly">("all");
