@@ -122,6 +122,7 @@ export const sentinel = {
     const raw = await api.get<any>("/api/logs", { limit, rangeMinutes, eventSource });
     return (Array.isArray(raw) ? raw : raw.logs ?? []).map(normalizeLog);
   }, () => mockLogs(limit), "logs"),
+  deleteLogs: async (ids: string[]) => api.post<{ ok: boolean; requested: number; deleted: number; failed: number }>("/api/logs/delete", { ids }),
   protocolDistribution: (limit: number, rangeMinutes?: number, eventSource?: string) =>
     withFallback(async () => normalizeProtocol(await api.get<any>("/api/protocol-distribution", { limit, rangeMinutes, eventSource })), mockProtocolDistribution, "protocols"),
   users: () => withFallback(async () => {
@@ -142,6 +143,7 @@ export const sentinel = {
     const raw = await api.get<{ datasets: DatasetInfo[] }>("/api/datasets");
     return raw.datasets;
   }, () => [], "datasets"),
+  deleteDataset: async (datasetId: string) => api.del(`/api/datasets/${encodeURIComponent(datasetId)}`),
   algorithms: () => withFallback(async () => {
     const raw = await api.get<{ algorithms: ModelAlgorithm[] }>("/api/models/algorithms");
     return raw.algorithms;
@@ -199,6 +201,7 @@ export const sentinel = {
     try { await api.post(`/api/models/promote`, { version }); }
     catch (err) { if (!(err instanceof ApiUnavailableError)) throw err; }
   },
+  deleteModel: async (version: string) => api.del(`/api/models/${encodeURIComponent(version)}`),
 
   acknowledgeAlert: async (id: string) => {
     try { await api.post(`/api/alerts/${encodeURIComponent(id)}/acknowledge`); emitAlertsChanged(); }

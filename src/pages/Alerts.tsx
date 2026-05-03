@@ -22,6 +22,7 @@ import type { AlertItem, AlertSeverity } from "@/lib/types";
 export default function Alerts() {
   const cfg = getConfig();
   const { user } = useAuth();
+  const [limit, setLimit] = useState<number>(cfg.defaultLimit);
   const [rangeMinutes, setRangeMinutes] = useState(() => {
   const saved = localStorage.getItem("alerts.rangeMinutes");
   return saved ? Number(saved) : 15;
@@ -30,7 +31,7 @@ export default function Alerts() {
 useEffect(() => {
   localStorage.setItem("alerts.rangeMinutes", String(rangeMinutes));
 }, [rangeMinutes]);
-  const { data, loading, degraded, refresh } = usePolling(() => sentinel.alerts(cfg.defaultLimit, rangeMinutes), 12000, [cfg.defaultLimit, rangeMinutes]);
+  const { data, loading, degraded, refresh } = usePolling(() => sentinel.alerts(limit, rangeMinutes), 12000, [limit, rangeMinutes]);
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState<AlertSeverity | "all">("all");
   const [protocol, setProtocol] = useState<string>("all");
@@ -103,6 +104,12 @@ useEffect(() => {
           <SelectContent>
             <SelectItem value="all">All protocols</SelectItem>
             {protocols.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={String(limit)} onValueChange={(v) => setLimit(Number(v))}>
+          <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {[25, 50, 100, 200, 500].map(n => <SelectItem key={n} value={String(n)}>Limit {n}</SelectItem>)}
           </SelectContent>
         </Select>
         <span className="ml-auto text-xs text-muted-foreground">{filtered.length} of {data?.length ?? 0} - {rangeLabel(rangeMinutes)}</span>

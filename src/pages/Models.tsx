@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Database, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { sentinel } from "@/lib/sentinel";
 import { usePolling } from "@/lib/hooks";
@@ -19,6 +19,7 @@ import {
 export default function Models() {
   const current = usePolling(() => sentinel.currentModel(), 0);
   const history = usePolling(() => sentinel.modelHistory(), 0);
+  const datasets = usePolling(() => sentinel.datasets(), 0);
   const [working, setWorking] = useState<string | null>(null);
 
   const promote = async (version: string) => {
@@ -26,6 +27,26 @@ export default function Models() {
     try { await sentinel.promoteModel(version); toast.success(`Promoted ${version} to production`); current.refresh(); history.refresh(); }
     catch (e) { toast.error((e as Error).message); }
     finally { setWorking(null); }
+  };
+
+  const remove = async (version: string) => {
+    setWorking(version);
+    try { await sentinel.deleteModel(version); toast.success(`Deleted ${version}`); current.refresh(); history.refresh(); }
+    catch (e) { toast.error((e as Error).message); }
+    finally { setWorking(null); }
+  };
+
+  const removeDataset = async (datasetId: string) => {
+    setWorking(`dataset:${datasetId}`);
+    try {
+      await sentinel.deleteDataset(datasetId);
+      toast.success("Dataset deleted");
+      datasets.refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setWorking(null);
+    }
   };
 
   return (
@@ -80,28 +101,124 @@ export default function Models() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {m.status !== "production" && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm" disabled={working === m.version}>
-                            {working === m.version ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-2 h-3.5 w-3.5" />}
-                            Promote
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Promote {m.version} to production?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              The current production model will be archived. Live detection will switch to this version immediately.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => promote(m.version)}>Promote</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
+                    <div className="flex items-center justify-end gap-2">
+                      {m.status !== "production" && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm" disabled={working === m.version}>
+                              {working === m.version ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-2 h-3.5 w-3.5" />}
+                              Promote
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Promote {m.version} to production?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                The current production model will be archived. Live detection will switch to this version immediately.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => promote(m.version)}>Promote</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                      {m.status !== "production" && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm" disabled={working === m.version}>
+                              <Trash2 className="mr-2 h-3.5 w-3.5" />
+                              Delete
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete {m.version}?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This removes the candidate or archived model from the registry and deletes its saved artifact files.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => remove(m.version)}>Delete model</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-border bg-card">
+        <div className="flex items-center justify-between gap-3 border-b border-border p-4">
+          <div>
+            <h2 className="text-sm font-semibold">Dataset history</h2>
+            <p className="text-xs text-muted-foreground">Review preset and uploaded CSV datasets. Uploaded datasets can be deleted by admins.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => datasets.refresh()}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
+        {datasets.loading ? <LoadingBlock className="m-4" /> : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Dataset</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead>Updated</TableHead>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(datasets.data ?? []).map(item => (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Database className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="font-medium">{item.name}</span>
+                    </div>
+                    <div className="mt-1 font-mono text-xs text-muted-foreground">{item.filename}</div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={item.source === "uploaded" ? "default" : "outline"}>
+                      {item.source}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{(item.sizeBytes / 1024 / 1024).toFixed(2)} MB</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{format(new Date(item.updatedAt), "MMM d, HH:mm")}</TableCell>
+                  <TableCell className="text-right">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={working !== null || item.source === "preset"}
+                        >
+                          {working === `dataset:${item.id}` ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-2 h-3.5 w-3.5" />}
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete {item.name}?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This removes the uploaded CSV and any processed output generated from it. Preset datasets remain protected.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => removeDataset(item.id)}>Delete dataset</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))}

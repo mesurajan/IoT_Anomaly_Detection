@@ -39,8 +39,9 @@ const NAV_GROUPS = [
   {
     title: "Models",
     items: [
-      { to: "/models", label: "Model Management", icon: <Layers className="h-4 w-4" />, roles: ["admin"] },
       { to: "/retraining", label: "Retraining", icon: <Cpu className="h-4 w-4" />, roles: ["admin"] },
+      { to: "/models", label: "Model Management", icon: <Layers className="h-4 w-4" />, roles: ["admin"] },
+      
     ],
   },
   {

@@ -1,6 +1,7 @@
 ﻿import { useState } from "react";
 import { Save } from "lucide-react";
 import { toast } from "sonner";
+import { confirmAdminAction } from "@/lib/adminActionToast";
 import { sentinel } from "@/lib/sentinel";
 import { applyOverride, getConfig, getConfigState, loadRuntimeConfig } from "@/lib/config";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,11 @@ export default function Settings() {
   const [kibana, setKibana] = useState(cfg.kibanaUrl);
 
   const save = async () => {
+    confirmAdminAction({
+      action: "update",
+      target: "settings",
+      description: "Admin action required: update runtime endpoints.",
+      onConfirm: async () => {
     applyOverride({ apiBaseUrl: api.trim(), kibanaUrl: kibana.trim() });
     await loadRuntimeConfig();
     await sentinel.recordAudit({
@@ -22,6 +28,8 @@ export default function Settings() {
       detail: { apiBaseUrl: api.trim(), kibanaUrl: kibana.trim() },
     });
     toast.success("Settings updated");
+      },
+    });
   };
 
   return (

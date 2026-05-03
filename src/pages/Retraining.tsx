@@ -1,17 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
-import { CheckCircle2, Cpu, Database, Loader2, RefreshCw, Rocket, Upload } from "lucide-react";
+import { CheckCircle2, Cpu, Database, Loader2, RefreshCw, Rocket, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { confirmAdminAction } from "@/lib/adminActionToast";
 import { sentinel } from "@/lib/sentinel";
 import { usePolling } from "@/lib/hooks";
 import type { TrainingJob } from "@/lib/types";
 import { StatCard } from "@/components/sentinel/StatCard";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -29,7 +34,7 @@ export default function Retraining() {
   const [datasetId, setDatasetId] = useState("");
   const [algorithm, setAlgorithm] = useState("random_forest");
   const [job, setJob] = useState<TrainingJob | null>(null);
-  const [busy, setBusy] = useState<"upload" | "preprocess" | "train" | "promote" | null>(null);
+  const [busy, setBusy] = useState<"upload" | "preprocess" | "train" | "promote" | "delete" | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -94,9 +99,38 @@ export default function Retraining() {
   const latestCandidate = job?.model ?? history.data?.find(item => item.status === "candidate");
   const m = current.data;
 
+  const deleteDataset = async (datasetIdToDelete: string) => {
+    confirmAdminAction({
+      action: "delete",
+      target: "dataset",
+      description: "Admin action required: delete this uploaded dataset.",
+      onConfirm: async () => {
+    setBusy("delete");
+    try {
+      await sentinel.deleteDataset(datasetIdToDelete);
+      const remaining = (datasets.data ?? []).filter(item => item.id !== datasetIdToDelete);
+      await datasets.refresh();
+      if (datasetId === datasetIdToDelete) {
+        setDatasetId(remaining[0]?.id ?? "");
+      }
+      toast.success("Dataset deleted");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+      },
+    });
+  };
+
   const promoteLatest = async () => {
     const version = latestCandidate?.version;
     if (!version) return;
+    confirmAdminAction({
+      action: "promote",
+      target: `model ${version}`,
+      description: "Admin action required: promote this candidate to production.",
+      onConfirm: async () => {
     setBusy("promote");
     try {
       await sentinel.promoteModel(version);
@@ -108,6 +142,8 @@ export default function Retraining() {
     } finally {
       setBusy(null);
     }
+      },
+    });
   };
 
   const onUpload = async (file: File) => {
@@ -138,21 +174,32 @@ export default function Retraining() {
     }
   };
 
-  const trigger = async () => {
-    if (!datasetId) return;
-    setBusy("train");
-    try {
-      const r = await sentinel.retrain({ datasetName: datasetId, algorithm, maxRows: 0 });
-      localStorage.setItem(TRAINING_JOB_KEY, r.jobId);
-      setJob({ jobId: r.jobId, status: "queued", logs: "[INFO] Job queued" });
-      toast.success(`Retraining queued: ${r.jobId}`);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+ const trigger = async () => {
+  if (!datasetId) return;
 
+  setBusy("train");
+  try {
+    const r = await sentinel.retrain({
+      datasetName: datasetId,
+      algorithm,
+      maxRows: 0,
+    });
+
+    localStorage.setItem(TRAINING_JOB_KEY, r.jobId);
+
+    setJob({
+      jobId: r.jobId,
+      status: "queued",
+      logs: "[INFO] Job queued",
+    });
+
+    toast.success(`Retraining queued: ${r.jobId}`);
+  } catch (e) {
+    toast.error((e as Error).message);
+  } finally {
+    setBusy(null);
+  }
+};
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -311,6 +358,7 @@ export default function Retraining() {
           </div>
         </div>
       </section>
+
     </div>
   );
 }

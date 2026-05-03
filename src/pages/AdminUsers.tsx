@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { PencilLine, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { confirmAdminAction } from "@/lib/adminActionToast";
 import { sentinel } from "@/lib/sentinel";
 import { usePolling } from "@/lib/hooks";
 import { RoleBadge } from "@/components/sentinel/Badges";
@@ -41,18 +42,7 @@ export default function AdminUsers() {
     setUserForm({ username: account.username, password: "", role: account.role });
   };
 
-  const saveUser = async () => {
-    const username = userForm.username.trim();
-    const password = userForm.password.trim();
-    if (!username) {
-      toast.error("Username is required");
-      return;
-    }
-    if (!editingUser && !password) {
-      toast.error("Password is required for new accounts");
-      return;
-    }
-
+  const performSaveUser = async (username: string, password: string) => {
     setSavingUser(true);
     try {
       if (editingUser) {
@@ -75,10 +65,34 @@ export default function AdminUsers() {
     }
   };
 
-  const removeUser = async (account: AdminUser) => {
-    if (!window.confirm(`Delete ${account.username}? This cannot be undone.`)) {
+  const saveUser = async () => {
+    const username = userForm.username.trim();
+    const password = userForm.password.trim();
+    if (!username) {
+      toast.error("Username is required");
       return;
     }
+    if (!editingUser && !password) {
+      toast.error("Password is required for new accounts");
+      return;
+    }
+
+    confirmAdminAction({
+      action: editingUser ? "update" : "create",
+      target: `user ${username}`,
+      description: editingUser
+        ? "Admin action required: update this account."
+        : "Admin action required: create this account.",
+      onConfirm: () => performSaveUser(username, password),
+    });
+  };
+
+  const removeUser = async (account: AdminUser) => {
+    confirmAdminAction({
+      action: "delete",
+      target: `user ${account.username}`,
+      description: "This cannot be undone.",
+      onConfirm: async () => {
     try {
       await sentinel.deleteUser(account.id);
       toast.success("User deleted");
@@ -89,6 +103,8 @@ export default function AdminUsers() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to delete user");
     }
+      },
+    });
   };
 
   return (

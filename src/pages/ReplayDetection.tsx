@@ -1,12 +1,13 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
-import { Database, Loader2, Play, RefreshCw, Square, Upload } from "lucide-react";
+import { Database, Loader2, Play, RefreshCw, Square, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { sentinel } from "@/lib/sentinel";
 import { usePolling } from "@/lib/hooks";
 import type { DetectionJob } from "@/lib/types";
 import { StatCard } from "@/components/sentinel/StatCard";
 import { TimeRangePicker } from "@/components/sentinel/TimeRangePicker";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,11 +17,16 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const REPLAY_JOB_KEY = "sentinel.activeReplayJobId";
 const FINISHED_STATUSES = ["completed", "failed", "stopped"];
 
 export default function ReplayDetection() {
+  const [logsLimit, setLogsLimit] = useState(50);
   const [rangeMinutes, setRangeMinutes] = useState(() => {
   const saved = localStorage.getItem("alerts.rangeMinutes");
   return saved ? Number(saved) : 15;
@@ -32,14 +38,23 @@ useEffect(() => {
 }, [rangeMinutes]);
 
   const stats = usePolling(() => sentinel.stats(rangeMinutes, "dataset_replay"), 5000, [rangeMinutes]);
-  const logs = usePolling(() => sentinel.logs(8, rangeMinutes, "dataset_replay"), 8000, [rangeMinutes]);
+  const logs = usePolling(() => sentinel.logs(logsLimit, rangeMinutes, "dataset_replay"), 8000, [rangeMinutes, logsLimit]);
+  const refreshStats = stats.refresh;
+  const refreshLogs = logs.refresh;
   const datasets = usePolling(() => sentinel.datasets(), 0);
   const currentModel = usePolling(() => sentinel.currentModel(), 0);
   const modelHistory = usePolling(() => sentinel.modelHistory(), 0);
   const [datasetId, setDatasetId] = useState("");
   const [modelVersion, setModelVersion] = useState("");
   const [job, setJob] = useState<DetectionJob | null>(null);
-  const [busy, setBusy] = useState<"upload" | "start" | "stop" | null>(null);
+  const [busy, setBusy] = useState<"upload" | "start" | "stop" | "delete" | null>(null);
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    title: string;
+    description: string;
+    logIds: string[];
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -52,6 +67,17 @@ useEffect(() => {
     const fallback = currentModel.data?.version || production?.version || modelHistory.data?.[0]?.version || "";
     if (fallback) setModelVersion(fallback);
   }, [currentModel.data, modelHistory.data, modelVersion]);
+
+  useEffect(() => {
+    const availableLogIds = new Set((logs.data ?? []).map(item => item.id));
+    setSelectedLogIds(previous => previous.filter(id => availableLogIds.has(id)));
+  }, [logs.data]);
+
+  useEffect(() => {
+    if (!deleteMode) {
+      setSelectedLogIds([]);
+    }
+  }, [deleteMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,22 +105,87 @@ useEffect(() => {
         const latest = await sentinel.detectionJob(job.jobId);
         setJob(latest);
         if (FINISHED_STATUSES.includes(latest.status)) localStorage.removeItem(REPLAY_JOB_KEY);
-        stats.refresh();
-        logs.refresh();
+        refreshStats();
+        refreshLogs();
       } catch (error) {
         toast.error((error as Error).message);
       }
     }, 2500);
     return () => clearInterval(id);
-  }, [job?.jobId, job?.status]);
+  }, [job?.jobId, job?.status, refreshLogs, refreshStats]);
 
   const selectedDataset = datasets.data?.find(item => item.id === datasetId);
   const selectedModel = modelHistory.data?.find(item => item.version === modelVersion) ?? currentModel.data;
   const running = job ? ["queued", "running"].includes(job.status) : false;
+  const visibleLogs = logs.data ?? [];
+  const selectedCount = selectedLogIds.length;
+  const allLogsSelected = visibleLogs.length > 0 && selectedCount === visibleLogs.length;
+  const someLogsSelected = selectedCount > 0 && selectedCount < visibleLogs.length;
+
+  const toggleLogSelection = (logId: string) => {
+    setSelectedLogIds(previous => (
+      previous.includes(logId)
+        ? previous.filter(id => id !== logId)
+        : [...previous, logId]
+    ));
+  };
+
+  const setAllLogSelections = (checked: boolean) => {
+    setSelectedLogIds(checked ? visibleLogs.map(item => item.id) : []);
+  };
+
+  const deleteLogsById = async (logIds: string[]) => {
+    if (!logIds.length) {
+      toast.info("Select at least one detection log to delete");
+      return;
+    }
+
+    setBusy("delete");
+    try {
+      const result = await sentinel.deleteLogs(logIds);
+      if (result.deleted > 0) {
+        toast.success(result.deleted === 1 ? "Detection log deleted" : `Deleted ${result.deleted} detection logs`);
+      } else {
+        toast.info("No detection logs were deleted");
+      }
+      if (result.failed > 0) {
+        toast.warning(`${result.failed} detection logs could not be deleted`);
+      }
+      setDeleteMode(false);
+      setSelectedLogIds([]);
+      refreshLogs();
+      refreshStats();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to delete detection logs");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const deleteSelectedLogs = () => {
+    if (!selectedLogIds.length) {
+      toast.info("Select at least one detection log to delete");
+      return;
+    }
+
+    setDeleteConfirm({
+      title: selectedLogIds.length === 1 ? "Delete selected detection log?" : `Delete ${selectedLogIds.length} selected detection logs?`,
+      description: "This permanently removes the selected detection logs from Elasticsearch.",
+      logIds: selectedLogIds,
+    });
+  };
+
+  const deleteSingleLog = (timestamp: string, logId: string) => {
+    setDeleteConfirm({
+      title: `Delete detection log at ${format(new Date(timestamp), "HH:mm:ss")}?`,
+      description: "This permanently removes this detection event from Elasticsearch.",
+      logIds: [logId],
+    });
+  };
 
   const refreshAll = () => {
-    stats.refresh();
-    logs.refresh();
+    refreshStats();
+    refreshLogs();
     datasets.refresh();
   };
 
@@ -153,6 +244,30 @@ useEffect(() => {
 
   return (
     <div className="space-y-6">
+      <AlertDialog open={deleteConfirm !== null} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{deleteConfirm?.title}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirm?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy === "delete"}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy === "delete"}
+              onClick={() => {
+                const ids = deleteConfirm?.logIds ?? [];
+                setDeleteConfirm(null);
+                void deleteLogsById(ids);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dataset Replay Detection</h1>
@@ -252,28 +367,88 @@ useEffect(() => {
       </section>
 
       <section className="rounded-lg border border-border bg-card">
-        <div className="border-b border-border p-4">
-          <h2 className="text-sm font-semibold">Recent Detection Events</h2>
-          <p className="text-xs text-muted-foreground">Events stored in Elasticsearch for the selected time range.</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border p-4">
+          <div>
+            <h2 className="text-sm font-semibold">Recent Detection Events</h2>
+            <p className="text-xs text-muted-foreground">Events stored in Elasticsearch for the selected time range.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={String(logsLimit)} onValueChange={(v) => setLogsLimit(Number(v))}>
+              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {[25, 50, 100, 200].map(n => <SelectItem key={n} value={String(n)}>Limit {n}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {deleteMode ? (
+              <>
+                <span className="text-xs text-muted-foreground">{selectedCount} selected</span>
+                <Button variant="outline" size="sm" onClick={() => setDeleteMode(false)} disabled={busy === "delete"}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" size="sm" onClick={deleteSelectedLogs} disabled={busy === "delete" || selectedCount === 0}>
+                  {busy === "delete" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                  Delete Selected
+                </Button>
+              </>
+            ) : (
+              <Button variant="destructive" size="sm" onClick={() => setDeleteMode(true)} disabled={busy === "delete" || !visibleLogs.length}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Select to Delete
+              </Button>
+            )}
+          </div>
         </div>
         <Table>
           <TableHeader>
             <TableRow>
+              {deleteMode && (
+                <TableHead className="w-12">
+                  <Checkbox
+                    aria-label="Select all detection logs"
+                    checked={allLogsSelected ? true : someLogsSelected ? "indeterminate" : false}
+                    onCheckedChange={(checked) => setAllLogSelections(checked === true)}
+                  />
+                </TableHead>
+              )}
               <TableHead>Time</TableHead>
               <TableHead>Protocol</TableHead>
               <TableHead>Source</TableHead>
               <TableHead>Destination</TableHead>
               <TableHead>Class</TableHead>
+              {!deleteMode && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(logs.data ?? []).map(item => (
+            {visibleLogs.map(item => (
               <TableRow key={item.id}>
+                {deleteMode && (
+                  <TableCell className="w-12">
+                    <Checkbox
+                      aria-label={`Select detection log at ${format(new Date(item.timestamp), "HH:mm:ss")}`}
+                      checked={selectedLogIds.includes(item.id)}
+                      onCheckedChange={() => toggleLogSelection(item.id)}
+                    />
+                  </TableCell>
+                )}
                 <TableCell className="font-mono text-xs">{format(new Date(item.timestamp), "HH:mm:ss")}</TableCell>
                 <TableCell className="font-mono text-xs">{item.protocol}</TableCell>
                 <TableCell className="font-mono text-xs">{item.sourceIp}</TableCell>
                 <TableCell className="font-mono text-xs">{item.destinationIp}</TableCell>
                 <TableCell className={item.classification === "anomaly" ? "font-medium text-destructive" : "text-success"}>{item.classification}</TableCell>
+                {!deleteMode && (
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive"
+                      aria-label={`Delete detection log at ${format(new Date(item.timestamp), "HH:mm:ss")}`}
+                      disabled={busy === "delete"}
+                      onClick={() => deleteSingleLog(item.timestamp, item.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
